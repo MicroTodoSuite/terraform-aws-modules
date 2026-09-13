@@ -1,1 +1,1 @@
-{"transit-egress":"1.0.0"}
+{"ecr-repository": "1.0.0", "eks-node-group": "1.0.0", "iam-oidc-provider": "1.0.0", "route53-zone": "1.0.0", "state-backend": "1.0.0", "transit-egress": "1.0.0"}
