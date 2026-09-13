@@ -13,7 +13,7 @@ it.
 | --- | --- | --- |
 | Instance metadata | IMDSv2 required, hop limit 1, instance tags not exposed | Pods get AWS credentials through their service accounts and cannot reach the node's metadata service; set `metadata_hop_limit = 2` only for containers that need it |
 | Root volume | Encrypted gp3, size from `root_volume` | With a launch template the disk size must be set there, not on the node group |
-| Security groups | None in the template, so Amazon EKS applies the cluster security group | Any group set in the template replaces the cluster group; include rules that reach the control plane |
+| Network interface | One, with no public address and the given security groups | A template that sets security groups stops Amazon EKS from adding the cluster security group, so pass `cluster_security_group_id` from `eks-cluster` |
 | Versions | `kubernetes_version` and `release_version` explicit | Nodes roll only in a reviewed change |
 | Replacement | Physical name is the standard name plus a unique suffix, with create-before-destroy | A replaced group comes up beside the old one |
 | Node repair | On | Amazon EKS replaces unhealthy nodes |
@@ -39,7 +39,7 @@ and the other add-ons that need nodes wait for this group.
 | `node_group_name`, `launch_template_name` | `string` | — | Standard names |
 | `node_role_arn` | `string` | — | Node role with the worker node and registry pull policies |
 | `subnet_ids` | `list(string)` | — | Private subnets |
-| `security_group_ids` | `list(string)` | — | `[]` for the cluster security group |
+| `security_group_ids` | `list(string)` | — | At least one; include the cluster security group |
 | `kubernetes_version`, `release_version` | `string` | — | Pinned versions |
 | `ami_type` | `string` | — | Amazon Linux 2023 or Bottlerocket type |
 | `capacity_type` | `string` | — | `ON_DEMAND` or `SPOT` |
@@ -76,7 +76,7 @@ module "system_node_group" {
   launch_template_name = "${local.governance_prefix}-lt-system"
   node_role_arn        = module.node_role.role_arn
   subnet_ids           = values(module.network.private_subnet_ids)
-  security_group_ids   = []
+  security_group_ids   = [module.eks_cluster.cluster_security_group_id]
   kubernetes_version   = var.kubernetes_version
   release_version      = var.node_release_version
   ami_type             = "AL2023_x86_64_STANDARD"

@@ -82,11 +82,11 @@ variable "subnet_ids" {
 
 variable "security_group_ids" {
   type        = list(string)
-  description = "Security groups for the nodes, set in the launch template; [] lets Amazon EKS apply the cluster security group. Setting any replaces that group, so include rules that let the nodes reach the control plane."
+  description = "Security groups of the nodes' network interface, at least one. Amazon EKS adds its cluster security group only to a launch template that sets none, and this one sets them, so include the eks-cluster module's cluster_security_group_id."
 
   validation {
-    condition     = alltrue([for id in var.security_group_ids : can(regex("^sg-[0-9a-f]+$", id))])
-    error_message = "Every security group ID must look like sg-0123456789abcdef0."
+    condition     = length(var.security_group_ids) > 0 && alltrue([for id in var.security_group_ids : can(regex("^sg-[0-9a-f]+$", id))])
+    error_message = "Give at least one security group ID, such as the cluster security group, each like sg-0123456789abcdef0."
   }
 }
 

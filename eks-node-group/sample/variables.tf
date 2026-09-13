@@ -38,3 +38,8 @@ variable "subnet_ids" {
   type        = list(string)
   description = "Private subnets of the nodes; empty in terraform.tfvars, where they are looked up (PC-IAC-026)."
 }
+
+variable "cluster_security_group_id" {
+  type        = string
+  description = "Cluster security group from the eks-cluster sample; empty in terraform.tfvars, where it is looked up (PC-IAC-026)."
+}

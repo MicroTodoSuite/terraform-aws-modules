@@ -8,7 +8,6 @@ resource "aws_launch_template" "this" {
   name                   = var.launch_template_name
   description            = "Launch template of node group ${var.node_group_name}"
   update_default_version = true
-  vpc_security_group_ids = length(var.security_group_ids) > 0 ? var.security_group_ids : null
 
   block_device_mappings {
     device_name = var.root_volume.device_name
@@ -20,6 +19,16 @@ resource "aws_launch_template" "this" {
       volume_size           = var.root_volume.size_gib
       volume_type           = "gp3"
     }
+  }
+
+  # One network interface with no public address. Its security groups replace the cluster
+  # security group Amazon EKS adds to a template that sets none, so the root passes that
+  # group explicitly; security groups at the instance level would conflict with these.
+  network_interfaces {
+    device_index                = 0
+    associate_public_ip_address = false
+    delete_on_termination       = true
+    security_groups             = var.security_group_ids
   }
 
   metadata_options {
