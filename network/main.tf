@@ -115,6 +115,60 @@ resource "aws_route" "private_transit" {
   route_table_id         = aws_route_table.private[each.key].id
   destination_cidr_block = "0.0.0.0/0"
   transit_gateway_id     = var.transit_gateway_id
+
+  lifecycle {
+    precondition {
+      condition     = var.transit_attachment != null
+      error_message = "Subnet ${each.key} has transit egress, so the VPC needs transit_attachment; without its own attachment the route leads nowhere."
+    }
+  }
+
+  # The VPC is attached before its subnets route to the transit gateway; the route names
+  # the gateway, not the attachment, so the order is stated here.
+  depends_on = [aws_ec2_transit_gateway_vpc_attachment.this]
+}
+
+# The spoke side of a transit-egress hub, owned by this VPC's state so no environment can
+# change the hub itself: the VPC's attachment, kept out of the default tables; its
+# association with the spoke's dedicated table; that table's one default route to the hub;
+# and this VPC's return route in the hub table.
+resource "aws_ec2_transit_gateway_vpc_attachment" "this" {
+  count    = var.transit_attachment == null ? 0 : 1
+  provider = aws.project
+
+  transit_gateway_id                              = var.transit_gateway_id
+  vpc_id                                          = aws_vpc.this.id
+  subnet_ids                                      = [for key in var.transit_attachment.subnet_keys : aws_subnet.this[key].id]
+  dns_support                                     = "enable"
+  transit_gateway_default_route_table_association = false
+  transit_gateway_default_route_table_propagation = false
+  tags                                            = merge(local.base_tags, { Name = var.transit_attachment.name })
+}
+
+resource "aws_ec2_transit_gateway_route_table_association" "this" {
+  count    = var.transit_attachment == null ? 0 : 1
+  provider = aws.project
+
+  transit_gateway_attachment_id  = aws_ec2_transit_gateway_vpc_attachment.this[0].id
+  transit_gateway_route_table_id = var.transit_attachment.route_table_id
+}
+
+resource "aws_ec2_transit_gateway_route" "to_hub" {
+  count    = var.transit_attachment == null ? 0 : 1
+  provider = aws.project
+
+  transit_gateway_route_table_id = var.transit_attachment.route_table_id
+  destination_cidr_block         = "0.0.0.0/0"
+  transit_gateway_attachment_id  = var.transit_attachment.hub_attachment_id
+}
+
+resource "aws_ec2_transit_gateway_route" "hub_return" {
+  count    = var.transit_attachment == null ? 0 : 1
+  provider = aws.project
+
+  transit_gateway_route_table_id = var.transit_attachment.hub_route_table_id
+  destination_cidr_block         = aws_vpc.this.cidr_block
+  transit_gateway_attachment_id  = aws_ec2_transit_gateway_vpc_attachment.this[0].id
 }
 
 resource "aws_cloudwatch_log_group" "flow_log" {

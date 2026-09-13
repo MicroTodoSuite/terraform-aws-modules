@@ -58,3 +58,8 @@ output "flow_log_group_arn" {
   description = "ARN of the flow log's CloudWatch log group."
   value       = aws_cloudwatch_log_group.flow_log.arn
 }
+
+output "transit_attachment_id" {
+  description = "ID of the VPC's transit gateway attachment, or null without transit_attachment."
+  value       = one(aws_ec2_transit_gateway_vpc_attachment.this[*].id)
+}
