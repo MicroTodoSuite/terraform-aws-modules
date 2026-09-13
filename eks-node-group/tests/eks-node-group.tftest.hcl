@@ -25,7 +25,7 @@ variables {
   launch_template_name = "lex-mts-fdev-lt-system"
   node_role_arn        = "arn:aws:iam::123456789012:role/lex-mts-fdev-role-node"
   subnet_ids           = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
-  security_group_ids   = []
+  security_group_ids   = ["sg-0123456789abcdef0"]
   kubernetes_version   = "1.35"
   release_version      = "1.35.6-20260801"
   ami_type             = "AL2023_x86_64_STANDARD"
@@ -50,6 +50,11 @@ run "launches_from_a_template_with_imdsv2_and_an_encrypted_root_volume" {
   assert {
     condition     = aws_launch_template.this.block_device_mappings[0].device_name == "/dev/xvda" && aws_launch_template.this.block_device_mappings[0].ebs[0].encrypted == "true" && aws_launch_template.this.block_device_mappings[0].ebs[0].volume_type == "gp3" && aws_launch_template.this.block_device_mappings[0].ebs[0].volume_size == 50
     error_message = "The root volume must be an encrypted gp3 volume of the given size."
+  }
+
+  assert {
+    condition     = length(aws_launch_template.this.network_interfaces) == 1 && aws_launch_template.this.network_interfaces[0].associate_public_ip_address == "false" && aws_launch_template.this.network_interfaces[0].security_groups == toset(["sg-0123456789abcdef0"])
+    error_message = "Nodes must launch with one network interface, no public address, and the given security groups."
   }
 
   assert {
@@ -105,14 +110,28 @@ run "sets_custom_security_groups_labels_and_taints" {
   }
 
   assert {
-    condition     = aws_launch_template.this.vpc_security_group_ids == toset(["sg-0123456789abcdef0", "sg-0123456789abcdef1"])
-    error_message = "Given security groups must be set in the launch template."
+    condition     = aws_launch_template.this.network_interfaces[0].security_groups == toset(["sg-0123456789abcdef0", "sg-0123456789abcdef1"])
+    error_message = "Given security groups must be set on the launch template's network interface."
   }
 
   assert {
     condition     = aws_eks_node_group.this.labels["microtodosuite.io/capacity-owner"] == "managed-node-group" && length(aws_eks_node_group.this.taint) == 1 && one(aws_eks_node_group.this.taint[*].effect) == "NO_SCHEDULE"
     error_message = "Labels and taints must reach the node group."
   }
+}
+
+run "rejects_a_node_group_without_security_groups" {
+  command = plan
+
+  providers = {
+    aws.project = aws.project
+  }
+
+  variables {
+    security_group_ids = []
+  }
+
+  expect_failures = [var.security_group_ids]
 }
 
 run "rejects_a_desired_size_above_the_maximum" {
