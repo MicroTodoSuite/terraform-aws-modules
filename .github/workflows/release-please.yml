@@ -1,0 +1,38 @@
+name: release-please
+
+# Opens one release pull request per module from merged Conventional Commits and,
+# when a release pull request merges, tags the module as <module>-vX.Y.Z
+# (MTS-IAC-102). The token comes from the organization's release GitHub App, so
+# GitHub Actions itself needs no permission to create pull requests.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: open or update release pull requests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Mint a token from the organization's release app
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
+      - name: Open or update the release pull requests
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
