@@ -26,6 +26,24 @@
     },
     "secret": {
       "component": "secret"
+    },
+    "kms-key": {
+      "component": "kms-key"
+    },
+    "security-group": {
+      "component": "security-group"
+    },
+    "network": {
+      "component": "network"
+    },
+    "transit-egress": {
+      "component": "transit-egress"
+    },
+    "eks-cluster": {
+      "component": "eks-cluster"
+    },
+    "eks-node-group": {
+      "component": "eks-node-group"
     }
   }
 }
