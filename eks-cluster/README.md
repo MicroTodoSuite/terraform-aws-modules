@@ -41,13 +41,28 @@ this module:
 module "eks_cluster" {
   # ...
   addons = {
-    vpc-cni    = { addon_version = "v1.23.0-eksbuild.1", before_compute = true, service_account_role_arn = module.vpc_cni_role.role_arn }
-    kube-proxy = { addon_version = "v1.35.3-eksbuild.18", before_compute = true }
-    coredns    = { addon_version = "v1.14.3-eksbuild.3" }
+    eks-pod-identity-agent = { addon_version = var.pod_identity_agent_version, before_compute = true }
+    vpc-cni                = { addon_version = "v1.23.0-eksbuild.1", before_compute = true, pod_identity_associations = { aws-node = module.vpc_cni_role.role_arn } }
+    kube-proxy             = { addon_version = "v1.35.3-eksbuild.18", before_compute = true }
+    coredns                = { addon_version = "v1.14.3-eksbuild.3" }
   }
   compute_ready = [module.system_node_group.node_group_arn]
 }
 ```
+
+## Add-on roles
+
+An add-on that calls AWS takes its role in one of two ways, never both:
+
+- **EKS Pod Identity.** `pod_identity_associations` maps the add-on's service
+  account to a role that trusts `pods.eks.amazonaws.com`. No OIDC provider is
+  involved, so the role can exist before the cluster, and the CNI is
+  authorized from the first node's boot. The `eks-pod-identity-agent` add-on
+  must be in `addons` with `before_compute = true`; the module refuses
+  associations without it. The agent uses the node role, which needs
+  `eks-auth:AssumeRoleForPodIdentity`, as `AmazonEKSWorkerNodePolicy` grants.
+- **IRSA.** `service_account_role_arn` names a role that trusts the cluster's
+  OIDC provider, which exists only after the cluster.
 
 ## Inputs
 
@@ -69,7 +84,7 @@ module "eks_cluster" {
 | `deletion_protection` | `bool` | `true` | Refuse deletion |
 | `bootstrap_self_managed_addons` | `bool` | `false` | Install self-managed add-ons at creation |
 | `access_entries` | `map(object)` | `{}` | `principal_arn`, `type`, `kubernetes_groups`, `policy_associations` (`policy_arn`, `access_scope_type`, `namespaces`) |
-| `addons` | `map(object)` | `{}` | Keyed by add-on name: `addon_version`, `before_compute`, `service_account_role_arn`, `configuration_values`, `resolve_conflicts_on_update` |
+| `addons` | `map(object)` | `{}` | Keyed by add-on name: `addon_version`, `before_compute`, `service_account_role_arn` or `pod_identity_associations` (service account to role ARN), `configuration_values`, `resolve_conflicts_on_update` |
 | `compute_ready` | `list(string)` | `[]` | Values that exist once nodes do |
 | `additional_tags` | `map(string)` | `{}` | Extra tags; `Name` is reserved |
 
@@ -86,7 +101,7 @@ module "eks_cluster" {
 
 ```hcl
 module "eks_cluster" {
-  source = "git::https://github.com/MicroTodoSuite/terraform-aws-modules.git//eks-cluster?ref=eks-cluster-v1.0.0"
+  source = "git::https://github.com/MicroTodoSuite/terraform-aws-modules.git//eks-cluster?ref=eks-cluster-v1.1.0"
 
   providers = {
     aws.project = aws.principal

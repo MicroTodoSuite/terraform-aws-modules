@@ -227,10 +227,17 @@ variable "addons" {
     addon_version               = string
     before_compute              = optional(bool, false)
     service_account_role_arn    = optional(string)
+    pod_identity_associations   = optional(map(string), {})
     configuration_values        = optional(string)
     resolve_conflicts_on_update = optional(string, "PRESERVE")
   }))
-  description = "Amazon EKS managed add-ons keyed by add-on name, each at a pinned version. before_compute = true installs it with the cluster (vpc-cni, kube-proxy); the others wait for var.compute_ready, because their pods need nodes (coredns, aws-ebs-csi-driver)."
+  description = <<-EOT
+    Amazon EKS managed add-ons keyed by add-on name, each at a pinned version. before_compute = true installs it with the
+    cluster (vpc-cni, kube-proxy, eks-pod-identity-agent); the others wait for var.compute_ready, because their pods need
+    nodes (coredns, aws-ebs-csi-driver). An add-on that calls AWS takes its role through IRSA (service_account_role_arn,
+    which needs the cluster's OIDC provider) or through EKS Pod Identity (pod_identity_associations, from service account
+    name to role ARN, which needs the eks-pod-identity-agent add-on installed with the cluster), never both.
+  EOT
   default     = {}
 
   validation {
@@ -246,6 +253,26 @@ variable "addons" {
       contains(["NONE", "OVERWRITE", "PRESERVE"], addon.resolve_conflicts_on_update)
     ])
     error_message = "An add-on's service account role must be an IAM role ARN, its configuration values JSON, and its update conflict resolution NONE, OVERWRITE, or PRESERVE."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for addon in values(var.addons) : [
+        for service_account, role_arn in addon.pod_identity_associations :
+        can(regex("^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$", service_account)) && can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:role/.+$", role_arn))
+      ]
+    ]))
+    error_message = "Every Pod Identity association maps a Kubernetes service account name to an IAM role ARN."
+  }
+
+  validation {
+    condition     = alltrue([for addon in values(var.addons) : addon.service_account_role_arn == null || length(addon.pod_identity_associations) == 0])
+    error_message = "An add-on takes its role through IRSA or through EKS Pod Identity, not both."
+  }
+
+  validation {
+    condition     = alltrue([for addon in values(var.addons) : length(addon.pod_identity_associations) == 0]) || try(var.addons["eks-pod-identity-agent"].before_compute, false)
+    error_message = "Pod Identity associations need the eks-pod-identity-agent add-on with before_compute = true, so its DaemonSet runs on the first nodes."
   }
 }
 

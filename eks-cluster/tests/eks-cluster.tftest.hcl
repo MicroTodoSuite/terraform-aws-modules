@@ -182,6 +182,94 @@ run "installs_network_addons_with_the_cluster_and_the_rest_after_compute" {
   }
 }
 
+run "associates_addon_service_accounts_with_pod_identity_roles" {
+  command = plan
+
+  providers = {
+    aws.project = aws.project
+  }
+
+  variables {
+    addons = {
+      # A fixture version; a root pins the one aws eks describe-addon-versions returns.
+      eks-pod-identity-agent = { addon_version = "v0.0.0-eksbuild.1", before_compute = true }
+      vpc-cni                = { addon_version = "v1.23.0-eksbuild.1", before_compute = true, pod_identity_associations = { aws-node = "arn:aws:iam::123456789012:role/lex-mts-fdev-role-vpccni" } }
+      aws-ebs-csi-driver     = { addon_version = "v1.64.0-eksbuild.1", pod_identity_associations = { ebs-csi-controller-sa = "arn:aws:iam::123456789012:role/lex-mts-fdev-role-ebscsi" } }
+    }
+    compute_ready = ["arn:aws:eks:us-east-1:123456789012:nodegroup/lex-mts-fdev-eks-main/lex-mts-fdev-ng-system/00000000-0000-0000-0000-000000000000"]
+  }
+
+  assert {
+    condition     = keys(aws_eks_addon.before_compute) == ["eks-pod-identity-agent", "vpc-cni"] && keys(aws_eks_addon.after_compute) == ["aws-ebs-csi-driver"]
+    error_message = "The Pod Identity agent must install with the cluster, beside the CNI, so its DaemonSet runs on the first nodes."
+  }
+
+  assert {
+    condition     = length(aws_eks_addon.before_compute["vpc-cni"].pod_identity_association) == 1 && one(aws_eks_addon.before_compute["vpc-cni"].pod_identity_association).service_account == "aws-node" && one(aws_eks_addon.before_compute["vpc-cni"].pod_identity_association).role_arn == "arn:aws:iam::123456789012:role/lex-mts-fdev-role-vpccni"
+    error_message = "The CNI's service account must be associated with its role through EKS Pod Identity."
+  }
+
+  assert {
+    condition     = one(aws_eks_addon.after_compute["aws-ebs-csi-driver"].pod_identity_association).service_account == "ebs-csi-controller-sa" && one(aws_eks_addon.after_compute["aws-ebs-csi-driver"].pod_identity_association).role_arn == "arn:aws:iam::123456789012:role/lex-mts-fdev-role-ebscsi"
+    error_message = "An add-on installed after compute must carry its Pod Identity association too."
+  }
+
+  assert {
+    condition     = length(aws_eks_addon.before_compute["eks-pod-identity-agent"].pod_identity_association) == 0
+    error_message = "The agent itself uses the node role and takes no association."
+  }
+}
+
+run "rejects_pod_identity_without_the_agent" {
+  command = plan
+
+  providers = {
+    aws.project = aws.project
+  }
+
+  variables {
+    addons = {
+      vpc-cni = { addon_version = "v1.23.0-eksbuild.1", before_compute = true, pod_identity_associations = { aws-node = "arn:aws:iam::123456789012:role/lex-mts-fdev-role-vpccni" } }
+    }
+  }
+
+  expect_failures = [var.addons]
+}
+
+run "rejects_an_addon_with_both_irsa_and_pod_identity" {
+  command = plan
+
+  providers = {
+    aws.project = aws.project
+  }
+
+  variables {
+    addons = {
+      eks-pod-identity-agent = { addon_version = "v0.0.0-eksbuild.1", before_compute = true }
+      vpc-cni                = { addon_version = "v1.23.0-eksbuild.1", before_compute = true, service_account_role_arn = "arn:aws:iam::123456789012:role/lex-mts-fdev-role-vpccni", pod_identity_associations = { aws-node = "arn:aws:iam::123456789012:role/lex-mts-fdev-role-vpccni" } }
+    }
+  }
+
+  expect_failures = [var.addons]
+}
+
+run "rejects_a_pod_identity_association_to_something_other_than_a_role" {
+  command = plan
+
+  providers = {
+    aws.project = aws.project
+  }
+
+  variables {
+    addons = {
+      eks-pod-identity-agent = { addon_version = "v0.0.0-eksbuild.1", before_compute = true }
+      vpc-cni                = { addon_version = "v1.23.0-eksbuild.1", before_compute = true, pod_identity_associations = { aws-node = "arn:aws:iam::123456789012:user/operator" } }
+    }
+  }
+
+  expect_failures = [var.addons]
+}
+
 run "rejects_a_public_endpoint_open_to_the_internet" {
   command = plan
 
