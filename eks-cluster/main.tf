@@ -1,6 +1,7 @@
 # The EKS control plane with API-only access, encrypted secrets, and control-plane logs;
-# its access entries and access policies; and its managed add-ons. Node groups come from
-# the eks-node-group module. The role, keys, and subnets arrive as inputs (PC-IAC-023).
+# its access entries and access policies; and its managed add-ons, with their roles through
+# IRSA or EKS Pod Identity. Node groups come from the eks-node-group module. The roles,
+# keys, and subnets arrive as inputs (PC-IAC-023).
 resource "aws_cloudwatch_log_group" "control_plane" {
   provider = aws.project
 
@@ -94,6 +95,15 @@ resource "aws_eks_addon" "before_compute" {
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = each.value.resolve_conflicts_on_update
   tags                        = local.base_tags
+
+  dynamic "pod_identity_association" {
+    for_each = each.value.pod_identity_associations
+
+    content {
+      service_account = pod_identity_association.key
+      role_arn        = pod_identity_association.value
+    }
+  }
 }
 
 # Holds var.compute_ready so the add-ons below can wait for nodes. Passing a node group's
@@ -115,6 +125,15 @@ resource "aws_eks_addon" "after_compute" {
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = each.value.resolve_conflicts_on_update
   tags                        = local.base_tags
+
+  dynamic "pod_identity_association" {
+    for_each = each.value.pod_identity_associations
+
+    content {
+      service_account = pod_identity_association.key
+      role_arn        = pod_identity_association.value
+    }
+  }
 
   # CoreDNS and the EBS CSI controller are Deployments: created before any node exists,
   # they report DEGRADED and the apply waits until it times out.
