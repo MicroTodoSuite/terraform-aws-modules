@@ -1,1 +1,1 @@
-{"ecr-repository": "1.0.0", "eks-cluster": "1.0.0", "eks-node-group": "1.0.0", "iam-oidc-provider": "1.0.0", "kms-key": "1.0.0", "network": "1.0.0", "route53-zone": "1.0.0", "secret": "1.0.0", "security-group": "1.0.0", "state-backend": "1.0.0", "transit-egress": "1.0.0"}
+{"ecr-repository": "1.0.0", "eks-cluster": "1.0.0", "eks-node-group": "1.0.0", "iam-oidc-provider": "1.0.0", "iam-role": "1.0.0", "kms-key": "1.0.0", "network": "1.0.0", "route53-zone": "1.0.0", "secret": "1.0.0", "security-group": "1.0.0", "state-backend": "1.0.0", "transit-egress": "1.0.0"}
