@@ -1,0 +1,21 @@
+name: iac-checks
+
+# Runs the organization's infrastructure-as-code gate on every pull request and
+# on main (PC-IAC-018, MTS-IAC-102): the rule contracts, terraform fmt, test,
+# and validate, tflint, and Trivy. The gate is pinned to the commit that
+# MicroTodoSuite/.github#17 merged; a change of pin is a reviewed pull request.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  iac:
+    uses: MicroTodoSuite/.github/.github/workflows/iac-checks.yml@192204bcdbdc34576d27c6a63270b13a4d2648ef # .github#17
+    with:
+      kind: modules
