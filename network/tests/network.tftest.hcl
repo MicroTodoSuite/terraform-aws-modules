@@ -21,6 +21,9 @@ mock_provider "aws" {
   mock_resource "aws_nat_gateway" {
     defaults = { id = "nat-0123456789abcdef0" }
   }
+  mock_resource "aws_ec2_transit_gateway_vpc_attachment" {
+    defaults = { id = "tgw-attach-0fedcba9876543210" }
+  }
   mock_resource "aws_cloudwatch_log_group" {
     defaults = { arn = "arn:aws:logs:us-east-1:123456789012:log-group:/aws/vpc-flow-logs/lex-mts-eco-vpc-main" }
   }
@@ -34,6 +37,7 @@ variables {
   internet_gateway_name   = "lex-mts-eco-igw-main"
   public_route_table_name = "lex-mts-eco-rtb-public"
   transit_gateway_id      = ""
+  transit_attachment      = null
   subnets = {
     puba  = { name = "lex-mts-eco-sub-puba", availability_zone = "us-east-1a", cidr_block = "10.10.0.0/24", tier = "public", tags = { "kubernetes.io/role/elb" = "1" } }
     pubb  = { name = "lex-mts-eco-sub-pubb", availability_zone = "us-east-1b", cidr_block = "10.10.1.0/24", tier = "public" }
@@ -121,7 +125,70 @@ run "a_single_nat_gateway_serves_every_private_subnet" {
   }
 }
 
-run "a_transit_spoke_has_no_nat_gateway" {
+run "a_transit_spoke_attaches_to_the_hub_and_has_no_nat_gateway" {
+  command = plan
+
+  providers = {
+    aws.project = aws.project
+  }
+
+  variables {
+    transit_gateway_id = "tgw-0123456789abcdef0"
+    subnets = {
+      puba  = { name = "lex-mts-fstg-sub-puba", availability_zone = "us-east-1a", cidr_block = "10.20.0.0/24", tier = "public" }
+      priva = { name = "lex-mts-fstg-sub-priva", availability_zone = "us-east-1a", cidr_block = "10.20.16.0/20", tier = "private", route_table_name = "lex-mts-fstg-rtb-priva", egress = "transit" }
+      privb = { name = "lex-mts-fstg-sub-privb", availability_zone = "us-east-1b", cidr_block = "10.20.32.0/20", tier = "private", route_table_name = "lex-mts-fstg-rtb-privb", egress = "transit" }
+    }
+    nat_gateways = {}
+    transit_attachment = {
+      name               = "lex-mts-fstg-tgwa-hub"
+      subnet_keys        = ["priva", "privb"]
+      route_table_id     = "tgw-rtb-0aaaaaaaaaaaaaaa1"
+      hub_attachment_id  = "tgw-attach-0bbbbbbbbbbbbbbb1"
+      hub_route_table_id = "tgw-rtb-0ccccccccccccccc1"
+    }
+  }
+
+  assert {
+    condition     = length(aws_nat_gateway.this) == 0 && length(aws_eip.this) == 0 && length(aws_route.private_transit) == 2 && aws_route.private_transit["priva"].transit_gateway_id == "tgw-0123456789abcdef0"
+    error_message = "A transit spoke routes private traffic through the transit gateway and owns no NAT gateway or Elastic IP."
+  }
+
+  assert {
+    condition     = length(aws_ec2_transit_gateway_vpc_attachment.this) == 1 && aws_ec2_transit_gateway_vpc_attachment.this[0].vpc_id == "vpc-0123456789abcdef0" && !aws_ec2_transit_gateway_vpc_attachment.this[0].transit_gateway_default_route_table_association && !aws_ec2_transit_gateway_vpc_attachment.this[0].transit_gateway_default_route_table_propagation && aws_ec2_transit_gateway_vpc_attachment.this[0].tags["Name"] == "lex-mts-fstg-tgwa-hub"
+    error_message = "The VPC must attach itself to the transit gateway, outside the default tables."
+  }
+
+  assert {
+    condition     = aws_ec2_transit_gateway_route_table_association.this[0].transit_gateway_attachment_id == aws_ec2_transit_gateway_vpc_attachment.this[0].id && aws_ec2_transit_gateway_route_table_association.this[0].transit_gateway_route_table_id == "tgw-rtb-0aaaaaaaaaaaaaaa1"
+    error_message = "The attachment must be associated with the spoke's own route table."
+  }
+
+  assert {
+    condition     = aws_ec2_transit_gateway_route.to_hub[0].transit_gateway_route_table_id == "tgw-rtb-0aaaaaaaaaaaaaaa1" && aws_ec2_transit_gateway_route.to_hub[0].destination_cidr_block == "0.0.0.0/0" && aws_ec2_transit_gateway_route.to_hub[0].transit_gateway_attachment_id == "tgw-attach-0bbbbbbbbbbbbbbb1"
+    error_message = "The spoke's table must hold one default route, to the hub attachment."
+  }
+
+  assert {
+    condition     = aws_ec2_transit_gateway_route.hub_return[0].transit_gateway_route_table_id == "tgw-rtb-0ccccccccccccccc1" && aws_ec2_transit_gateway_route.hub_return[0].destination_cidr_block == "10.10.0.0/16" && aws_ec2_transit_gateway_route.hub_return[0].transit_gateway_attachment_id == aws_ec2_transit_gateway_vpc_attachment.this[0].id
+    error_message = "The hub table must route this VPC's CIDR back to its attachment."
+  }
+}
+
+run "a_vpc_without_transit_egress_has_no_attachment" {
+  command = plan
+
+  providers = {
+    aws.project = aws.project
+  }
+
+  assert {
+    condition     = length(aws_ec2_transit_gateway_vpc_attachment.this) == 0 && length(aws_ec2_transit_gateway_route.to_hub) == 0 && length(aws_ec2_transit_gateway_route.hub_return) == 0
+    error_message = "A VPC without transit_attachment must create no transit gateway resources."
+  }
+}
+
+run "rejects_transit_egress_without_an_attachment" {
   command = plan
 
   providers = {
@@ -137,10 +204,60 @@ run "a_transit_spoke_has_no_nat_gateway" {
     nat_gateways = {}
   }
 
-  assert {
-    condition     = length(aws_nat_gateway.this) == 0 && length(aws_eip.this) == 0 && length(aws_route.private_transit) == 1 && aws_route.private_transit["priva"].transit_gateway_id == "tgw-0123456789abcdef0"
-    error_message = "A transit spoke routes private traffic through the transit gateway and owns no NAT gateway or Elastic IP."
+  expect_failures = [aws_route.private_transit]
+}
+
+run "rejects_an_attachment_in_a_public_subnet" {
+  command = plan
+
+  providers = {
+    aws.project = aws.project
   }
+
+  variables {
+    transit_gateway_id = "tgw-0123456789abcdef0"
+    subnets = {
+      puba  = { name = "lex-mts-fstg-sub-puba", availability_zone = "us-east-1a", cidr_block = "10.20.0.0/24", tier = "public" }
+      priva = { name = "lex-mts-fstg-sub-priva", availability_zone = "us-east-1a", cidr_block = "10.20.16.0/20", tier = "private", route_table_name = "lex-mts-fstg-rtb-priva", egress = "transit" }
+    }
+    nat_gateways = {}
+    transit_attachment = {
+      name               = "lex-mts-fstg-tgwa-hub"
+      subnet_keys        = ["puba"]
+      route_table_id     = "tgw-rtb-0aaaaaaaaaaaaaaa1"
+      hub_attachment_id  = "tgw-attach-0bbbbbbbbbbbbbbb1"
+      hub_route_table_id = "tgw-rtb-0ccccccccccccccc1"
+    }
+  }
+
+  expect_failures = [var.transit_attachment]
+}
+
+run "rejects_two_attachment_subnets_in_one_zone" {
+  command = plan
+
+  providers = {
+    aws.project = aws.project
+  }
+
+  variables {
+    transit_gateway_id = "tgw-0123456789abcdef0"
+    subnets = {
+      puba  = { name = "lex-mts-fstg-sub-puba", availability_zone = "us-east-1a", cidr_block = "10.20.0.0/24", tier = "public" }
+      priva = { name = "lex-mts-fstg-sub-priva", availability_zone = "us-east-1a", cidr_block = "10.20.16.0/20", tier = "private", route_table_name = "lex-mts-fstg-rtb-priva", egress = "transit" }
+      privc = { name = "lex-mts-fstg-sub-privc", availability_zone = "us-east-1a", cidr_block = "10.20.48.0/20", tier = "private", route_table_name = "lex-mts-fstg-rtb-privc", egress = "transit" }
+    }
+    nat_gateways = {}
+    transit_attachment = {
+      name               = "lex-mts-fstg-tgwa-hub"
+      subnet_keys        = ["priva", "privc"]
+      route_table_id     = "tgw-rtb-0aaaaaaaaaaaaaaa1"
+      hub_attachment_id  = "tgw-attach-0bbbbbbbbbbbbbbb1"
+      hub_route_table_id = "tgw-rtb-0ccccccccccccccc1"
+    }
+  }
+
+  expect_failures = [var.transit_attachment]
 }
 
 run "rejects_nat_egress_without_a_nat_gateway" {

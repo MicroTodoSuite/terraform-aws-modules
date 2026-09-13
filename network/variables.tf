@@ -148,6 +148,43 @@ variable "transit_gateway_id" {
   }
 }
 
+variable "transit_attachment" {
+  type = object({
+    name               = string
+    subnet_keys        = list(string)
+    route_table_id     = string
+    hub_attachment_id  = string
+    hub_route_table_id = string
+  })
+  description = "The spoke side of a transit-egress hub, or null for a VPC without transit egress: the attachment's standard name; the private subnets that hold its network interfaces, at most one per Availability Zone; this spoke's dedicated route table and the hub attachment, from transit-egress; and the hub route table that receives this VPC's return route."
+
+  validation {
+    condition     = var.transit_attachment == null || var.transit_gateway_id != ""
+    error_message = "A transit attachment needs transit_gateway_id."
+  }
+
+  validation {
+    condition = var.transit_attachment == null || try(
+      can(regex("^[a-z0-9]+(-[a-z0-9]+)*$", var.transit_attachment.name)) && length(var.transit_attachment.name) <= 28 &&
+      can(regex("^tgw-rtb-[0-9a-f]+$", var.transit_attachment.route_table_id)) &&
+      can(regex("^tgw-rtb-[0-9a-f]+$", var.transit_attachment.hub_route_table_id)) &&
+      can(regex("^tgw-attach-[0-9a-f]+$", var.transit_attachment.hub_attachment_id)),
+      false
+    )
+    error_message = "The attachment needs a standard name of at most 28 characters, transit gateway route table IDs, and a hub attachment ID."
+  }
+
+  validation {
+    condition = var.transit_attachment == null || try(
+      length(var.transit_attachment.subnet_keys) > 0 &&
+      alltrue([for key in var.transit_attachment.subnet_keys : var.subnets[key].tier == "private"]) &&
+      length(distinct([for key in var.transit_attachment.subnet_keys : var.subnets[key].availability_zone])) == length(var.transit_attachment.subnet_keys),
+      false
+    )
+    error_message = "The attachment needs at least one private subnet key, and at most one subnet per Availability Zone, as a transit gateway attachment allows."
+  }
+}
+
 variable "flow_log" {
   type = object({
     name                     = string

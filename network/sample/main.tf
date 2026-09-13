@@ -15,5 +15,6 @@ module "network" {
   subnets                 = local.subnets
   nat_gateways            = local.nat_gateways
   transit_gateway_id      = ""
+  transit_attachment      = null
   flow_log                = local.flow_log
 }
