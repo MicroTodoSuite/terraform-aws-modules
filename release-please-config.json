@@ -46,7 +46,8 @@
       "component": "eks-node-group"
     },
     "karpenter-interruption": {
-      "component": "karpenter-interruption"
+      "component": "karpenter-interruption",
+      "release-as": "1.0.0"
     }
   }
 }
