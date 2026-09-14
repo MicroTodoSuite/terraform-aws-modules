@@ -23,7 +23,7 @@ resource "aws_kms_alias" "this" {
   target_key_id = aws_kms_key.this.key_id
 }
 
-resource "aws_s3_bucket" "this" { # NOSONAR terraform:S6258 accepted in docs/iac-exceptions.md until T043 enables CloudTrail data events
+resource "aws_s3_bucket" "this" { # NOSONAR terraform:S6258 accepted in docs/iac-exceptions.md: CloudTrail data events record access to this bucket (T043)
   provider = aws.project
 
   bucket        = local.bucket_full_name
