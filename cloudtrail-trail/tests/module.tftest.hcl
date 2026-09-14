@@ -126,12 +126,12 @@ run "records_only_object_events_of_the_named_buckets" {
   }
 
   assert {
-    condition     = { for selector in one(aws_cloudtrail.this.advanced_event_selector).field_selector : selector.field => selector.equals if selector.field != "resources.ARN" } == { eventCategory = ["Data"], "resources.type" = ["AWS::S3::Object"] }
+    condition     = { for selector in one(aws_cloudtrail.this.advanced_event_selector).field_selector : selector.field => selector.equals if selector.field != "resources.ARN" } == { eventCategory = tolist(["Data"]), "resources.type" = tolist(["AWS::S3::Object"]) }
     error_message = "The selector must record S3 object-level data events and nothing else."
   }
 
   assert {
-    condition     = one([for selector in one(aws_cloudtrail.this.advanced_event_selector).field_selector : selector.starts_with if selector.field == "resources.ARN"]) == ["arn:aws:s3:::lex-mts-shd-s3-tfstate-123456789012/"]
+    condition     = one([for selector in one(aws_cloudtrail.this.advanced_event_selector).field_selector : selector.starts_with if selector.field == "resources.ARN"]) == tolist(["arn:aws:s3:::lex-mts-shd-s3-tfstate-123456789012/"])
     error_message = "The selector must be confined to the object ARN prefixes the root named."
   }
 
