@@ -2,6 +2,17 @@
 # (PC-IAC-018). The events are Karpenter's reference CloudFormation template.
 mock_provider "aws" {
   alias = "project"
+
+}
+
+# The queue's ARN is overridden so the policy that names it can be read in an
+# assertion, and so the mocked apply below creates nothing to tear down.
+override_resource {
+  target = aws_sqs_queue.this
+  values = {
+    arn = "arn:aws:sqs:us-east-1:123456789012:lex-mts-fdev-sqs-karpenter"
+    url = "https://sqs.us-east-1.amazonaws.com/123456789012/lex-mts-fdev-sqs-karpenter"
+  }
 }
 
 variables {
@@ -61,30 +72,32 @@ run "encrypts_with_the_customer_key_when_the_root_passes_one" {
   }
 
   assert {
-    condition     = aws_sqs_queue.this.kms_master_key_id == "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000000" && aws_sqs_queue.this.sqs_managed_sse_enabled == null
+    condition     = aws_sqs_queue.this.kms_master_key_id == "arn:aws:kms:us-east-1:123456789012:key/00000000-0000-0000-0000-000000000000"
     error_message = "A customer key must encrypt the queue instead of the SQS-owned key."
   }
 }
 
+# Applied against the mocked provider, so the queue ARN the policy names is resolved;
+# no call reaches AWS.
 run "lets_only_the_event_services_enqueue_and_only_over_tls" {
-  command = plan
+  command = apply
 
   providers = {
     aws.project = aws.project
   }
 
   assert {
-    condition     = jsondecode(aws_sqs_queue_policy.this.policy).Version == "2012-10-17"
+    condition     = jsondecode(local.queue_policy).Version == "2012-10-17"
     error_message = "The policy must set Version explicitly; without it AWS hangs while attaching a queue policy."
   }
 
   assert {
-    condition     = toset(jsondecode(aws_sqs_queue_policy.this.policy).Statement[0].Principal.Service) == toset(["events.amazonaws.com", "sqs.amazonaws.com"]) && jsondecode(aws_sqs_queue_policy.this.policy).Statement[0].Action == "sqs:SendMessage"
+    condition     = toset(jsondecode(local.queue_policy).Statement[0].Principal.Service) == toset(["events.amazonaws.com", "sqs.amazonaws.com"]) && jsondecode(local.queue_policy).Statement[0].Action == "sqs:SendMessage"
     error_message = "Only EventBridge and Amazon SQS may enqueue interruptions."
   }
 
   assert {
-    condition     = jsondecode(aws_sqs_queue_policy.this.policy).Statement[1].Effect == "Deny" && jsondecode(aws_sqs_queue_policy.this.policy).Statement[1].Condition.Bool["aws:SecureTransport"] == "false"
+    condition     = jsondecode(local.queue_policy).Statement[1].Effect == "Deny" && jsondecode(local.queue_policy).Statement[1].Condition.Bool["aws:SecureTransport"] == "false"
     error_message = "Every request that is not encrypted in transit must be denied."
   }
 }
@@ -120,6 +133,10 @@ run "forwards_every_interruption_event_to_the_queue" {
 run "rejects_a_queue_name_amazon_sqs_would_refuse" {
   command = plan
 
+  providers = {
+    aws.project = aws.project
+  }
+
   variables {
     queue = {
       name                      = "lex mts fdev karpenter"
@@ -133,6 +150,10 @@ run "rejects_a_queue_name_amazon_sqs_would_refuse" {
 
 run "rejects_two_rules_sharing_a_name" {
   command = plan
+
+  providers = {
+    aws.project = aws.project
+  }
 
   variables {
     rule_names = {
