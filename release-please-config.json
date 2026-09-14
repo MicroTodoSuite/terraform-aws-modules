@@ -46,7 +46,10 @@
       "component": "eks-node-group"
     },
     "karpenter-interruption": {
-      "component": "karpenter-interruption",
+      "component": "karpenter-interruption"
+    },
+    "cloudtrail-trail": {
+      "component": "cloudtrail-trail",
       "release-as": "1.0.0"
     }
   }
